@@ -14,6 +14,7 @@
 **Solution:**Memory-Aware Scheduling & Prefix Caching
 
 The scope includes:
+
 **1. Latency Physics:** Deconstructing "Time-to-First-Token" (TTFT) vs "Time-per-Output-Token" (TPOT) to identify **Compute-bound vs Memory-bound** bottlenecks
 
 **2. Memory Math:** Predicting & verifying KV Cache growth (OOM Equation) to size clusters mathematically.
@@ -78,7 +79,7 @@ The scope includes:
 
 ### Phase 1 Evidence: Physics of Latency
 
-**1. Prefill Benchmarking (Time-to-First-Token)**
+**1. Prefill Benchmark (TTFT)**
 The latency to read documents / prompts of varying lengths before generating first word.
 
 | Context Length      | TTFT (Wait Time) | Processing Speed        | KV Cache Size (Per User) (Theoretical) (MHA not GQA) |
@@ -94,3 +95,16 @@ The latency to read documents / prompts of varying lengths before generating fir
 - **Compute-Bound:** Procesing speed drops by **60%** as context scales from 4k to 128k, confirming $O(N^2)$ computation for Attention even with FlashAttention optimization
 - **8 Second Wall**: Single user sending 128k request freezes GPU for **8 seconds**. This causes massive "Head-of-Line" blocking for all other requests
 - **KV Cache Calc** As vLLM pre-allocates VRAM, 1 way to estimate memory consumption is via 2 _ Layers _ hidden \* Precision bytes. 46GB for 128k tokens translates to handling 3 users before OOM.
+
+**2. Decode Benchmark (TPOT):**
+The speed of generating (writing) after prompt is processed
+| Target Output | Decode Speed | Analysis |
+| :--- | :--- | :--- |
+| 128 tokens | 95.68 tok/s | Memory Bound Baseline |
+| 2048 tokens | 105.99 tok/s | Stable Generation Speed |
+
+**Findings:**
+
+- There is a **500x Discrepancy** between Prefill (50k tok/s) - compute bound and Decode (106 tok/s) - memory-bound
+- **Implication:** GPU efficient at batch processing input prompt (prefill) but extremely inefficient at generation (decoding)
+- **Danger:** Single 128k prefill takes 7.7s, creating massive blocker for other user's request
