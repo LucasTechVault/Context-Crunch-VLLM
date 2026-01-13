@@ -55,7 +55,7 @@ The scope includes:
 
 - [x] **Chunked Prefill Solution:** Configured Scheduler to break massive prompts into processing chunks (e.g. 512 tokens/step), allow User A's chat to remain undisrupted.
 
-- [] **Dynamic Batching Decode Solution:** Tuned `max_num_seqs` to find saturation point where Throughput gains diminish (T_sat)
+- [x] **Dynamic Batching Decode Solution:** Tuned `max_num_seqs` to find saturation point where Throughput gains diminish (T_sat)
 
 ### Phase 3: RAG Foundations (Caching)
 
@@ -111,6 +111,8 @@ The speed of generating (writing) after prompt is processed
 
 ### Phase 2 Evidence: Scheduling & Throughput Improvements ("7" seconds stall)
 
+#### 2.1 Prefill-Chunking
+
 **2.1 Problem:** In a production environment, "Prefill" is compute-bound $O(N^2)$ (every token depend on every other token) while "Decode" is memory bound.
 
 - **Scenario:** User A uploads 120k token document while User B is chatting.
@@ -134,3 +136,28 @@ The speed of generating (writing) after prompt is processed
 
 - **Outcome:** Failed
 - **Root Cause:** Deep dive into vLLM internals revealed underlying limitations of Attention Kernels for Phi-3 do not support concurrent prefill matrices.
+
+#### Decode Dynamic Batching
+
+**2.2 Problem:** Decode phase is memory-bound, processing tokens sequentially (batch = 1) leaves compute unit idle
+
+- **Scenario:** High-traffic server with 2000 requests (50 tokens)
+- **Baseline Behavior:** Processing single request causes throughput to be 108 tok/s. GPU spends 99% time moving model weights.
+
+**2.2 Solution:** Tune `max_sum_seqs` to enable higher batch (50 requests to be processed etc.) from 1 to 1024.
+
+- **Configuration:** Batch_size: 1 to 1024
+- **Mechanism:** GPU load weight once, apply to multiple requests
+- **Result:** System throughput increase by **125x**
+
+### Saturation Report
+
+| Batch Size | Throughput (tok/s) | Gain vs Prev |
+| :--------: | :----------------: | :----------: |
+|     1      |       108.0        |      -       |
+|     16     |       1744.7       |   +1515.8%   |
+|     64     |       6213.3       |   +256.1%    |
+|    128     |       9210.4       |    +48.2%    |
+|    256     |      11677.8       |    +26.8%    |
+|    512     |      12862.7       |    +10.1%    |
+|    1024    |      13577.5       |    +5.6%     |

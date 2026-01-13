@@ -51,7 +51,7 @@
 
 # Phase 2 - Solutions to Prefill & Decode Problems
 
-## 2.1 - Chunked Prefill
+## 2.1 - Chunked Prefill (Handle Prefill inefficiency)
 
     - opening more cashier lanes for more customers
     - Chunked Prefill:
@@ -71,3 +71,52 @@
 - Problem is with softmax as it requires the global max. The solution is to compute a provisional softmax attention using local max of each tile.
 - For every new tile, all previously computed provisional softmax will be scaled and adjusted with the latest information.
 - eventually, after streaming all tiles, the adjust provisional softmax will be as though the softmax was computed in a single pass
+
+## 2.2 - Dynamic Batching (Handle Decode Inefficiency)
+
+- Decode phase, load model (7GB) just to process single token -> drive bus to transport 1 passenger
+- Prefill phase, load model (7GB) to process many tokens (efficient)
+- **Solution:** Dynamic Batching --> (wait for 50 people before moving bus) - idea: DEFINE Batch size (16, 64, 128 etc.) - Measure throughput
+
+# Phase 3 - Retrieval-Augmented Generation (RAG) Basics
+
+### What is RAG?
+
+Imagine an LLM taking a test:
+**Standard LLM:**
+
+- Student answer from memory.
+- If studied last year (training cut-off), data not up-to-date
+
+**RAG:**
+
+- Student allowed to use textbook
+  - **Retrieve:** Look up relevant page in book (context)
+  - **Augment:** Copy that page into notes (prompt)
+  - **Generate:** Write answer based on notes (context in prompt)
+
+**Problem:** - RAG is expensive - Every question = copy-paste huge chunk of context into prompt (prefill)
+
+#### Prompt-Training (Few-Shot Prompting)
+
+- Pre-trained models performing dynamic learning
+- model weights do not change (forgets after restart)
+- temporary memory
+- LLM are good pattern recognizers
+
+#### RAG & Few-Shot Prompting
+
+- Feed pre-trained model Context (100-page manual)
+- Model learn how to answer question based on context provided
+- learning is temporarily, forgets after reset
+- **Problem:** Need to paste (10k tokens) into prompt each time to calculate KV Cache
+
+- **Solution:** Prefix Caching (Radix Attention)
+  - Context attached to prompt as prefix
+  - stores the prefix KV in cache
+
+#### Prefix Cache is a form of KV Cache
+
+**Radix Attention:** Smart Cache Layer - detects if different requests have the same prefix (prompts) using Radix tree where each node represent a sequence of tokens and pointer to their KV Cache
+
+**Paged Attention:** Solves the need for contiguous VRAM, allows "pages" of attention to be stored in different parts of memory, using a Page table to track the location. Thus, memory can be maximize
