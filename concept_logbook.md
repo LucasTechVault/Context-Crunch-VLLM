@@ -120,3 +120,7 @@ Imagine an LLM taking a test:
 **Radix Attention:** Smart Cache Layer - detects if different requests have the same prefix (prompts) using Radix tree where each node represent a sequence of tokens and pointer to their KV Cache
 
 **Paged Attention:** Solves the need for contiguous VRAM, allows "pages" of attention to be stored in different parts of memory, using a Page table to track the location. Thus, memory can be maximize
+
+#### How we do Prefix Caching in vLLM
+
+- specify `enable_prefix_caching=True` in AsyncEngineArgs of vLLM
