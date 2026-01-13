@@ -51,11 +51,11 @@ The scope includes:
 
 ### Phase 2: Scheduling & Throughput
 
-- [] **Head-of-Line Simulation:** Reproduced "Production Stall" where single long request spikes latency for 50 short requests
+- [x] **Head-of-Line Simulation:** Simulated User A chatting as normal user (small prompts) when User B uploaded large document (120k token), causing latency for User A.
 
-- [] **Chunked Prefill Solution:** Configured Scheduler to break massive prompts into processing chunks (e.g. 512 tokens/step), reducing User's wait time by X%.
+- [x] **Chunked Prefill Solution:** Configured Scheduler to break massive prompts into processing chunks (e.g. 512 tokens/step), allow User A's chat to remain undisrupted.
 
-- [] **Dynamic Batching:** Tuned `max_num_seqs` to find saturation point where Throughput gains diminish (T_sat)
+- [] **Dynamic Batching Decode Solution:** Tuned `max_num_seqs` to find saturation point where Throughput gains diminish (T_sat)
 
 ### Phase 3: RAG Foundations (Caching)
 
@@ -108,3 +108,29 @@ The speed of generating (writing) after prompt is processed
 - There is a **500x Discrepancy** between Prefill (50k tok/s) - compute bound and Decode (106 tok/s) - memory-bound
 - **Implication:** GPU efficient at batch processing input prompt (prefill) but extremely inefficient at generation (decoding)
 - **Danger:** Single 128k prefill takes 7.7s, creating massive blocker for other user's request
+
+### Phase 2 Evidence: Scheduling & Throughput Improvements ("7" seconds stall)
+
+**2.1 Problem:** In a production environment, "Prefill" is compute-bound $O(N^2)$ (every token depend on every other token) while "Decode" is memory bound.
+
+- **Scenario:** User A uploads 120k token document while User B is chatting.
+- **Baseline Behavior:** GPU locks up for 7 seconds to process the prefill request. User B thought that chat crashed
+
+**2.1 Solution:** Configure vLLM scheduler to prioritize **Inter-Token Latency** over raw throughput.
+
+- **Configuration:** `enable_chunked_prefill=True` & `max_num_batched_tokens=512`.
+- **Mechanism:** Massive 120k request broken into 234 small batches. Scheduler injects chat tokens _between_ batches.
+- **Result:** No disruption occurs
+
+**Metric:** Inter-Token Latency Spike
+
+| Scenario      | Scheduler Config | Worst Freeze (Spike) | User Experience    |
+| :------------ | :--------------- | :------------------- | :----------------- |
+| **Baseline**  | Blocking (128k)  | **6.99s**            | Connection Stalled |
+| **Optimized** | Chunked (512)    | **0.13s**            | Smooth Chat        |
+
+**2.1 Engineering Constraints Discovery:**
+**Problem:** Attempted to optimize for "New User Latency" (TTFT) using concurrent partial prefills.
+
+- **Outcome:** Failed
+- **Root Cause:** Deep dive into vLLM internals revealed underlying limitations of Attention Kernels for Phi-3 do not support concurrent prefill matrices.

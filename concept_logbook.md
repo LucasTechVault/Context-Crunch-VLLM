@@ -33,8 +33,41 @@
 
 **Metric:** Time Per Output Token (TPOT) - How fast does text stream?
 
-## Section 1 - "Prefill Experiment"
+## Section 1.1 - "Prefill Experiment"
 
     - Input length from 1k to 128k token
     - measure how long Prefill takes (to read entire length)
     - Goal -> Find compute-bound limit
+    - how it works:
+        - send in dummy_prompt "the_ " * input length
+
+## Section 1.2 - "Decode Experiment"
+
+    - Output length from [128, 256, 512, 1024, 2048]
+    - model needs previous words to generate next word
+    - cannot process all tokens like it did for prefill
+    - need to fetch model weights, forward prop -> generate output for each word
+    - specify in SamplingParams(min_tokens=output_len, ignore_eos=True) to prevent early cutoff
+
+# Phase 2 - Solutions to Prefill & Decode Problems
+
+## 2.1 - Chunked Prefill
+
+    - opening more cashier lanes for more customers
+    - Chunked Prefill:
+        - Customer A: 128000 items
+        - Customer B: 10 items
+
+        - Cashier scans 512 items for A
+        - Cashier checks line, help B first
+        - Cashier returns to A, process next chunked batch
+        - B waits 0.1s, A waits 7.7s + 0.1s
+
+#### FlashAttention Side Learning
+
+- vLLM uses FlashAttention to compute attention quickly
+- Attention Computation is costly because of the huge grid (e.g. 8000 x 8000) that cannot fit into SRAM at once.
+- instead, this huge 8000 x 8000 is split into "tiles" that can fit into SRAM. Attention for each tile is computed.
+- Problem is with softmax as it requires the global max. The solution is to compute a provisional softmax attention using local max of each tile.
+- For every new tile, all previously computed provisional softmax will be scaled and adjusted with the latest information.
+- eventually, after streaming all tiles, the adjust provisional softmax will be as though the softmax was computed in a single pass
